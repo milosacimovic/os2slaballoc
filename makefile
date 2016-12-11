@@ -9,7 +9,7 @@ _OBJ = test.o
 DEPS = $(patsubst %,$(INCLUDE)/%,$(_DEPS))
 OBJ = $(patsubst %,$(OBJFOLDER)/%,$(_OBJ))
 
-$(OBJFOLDER)/%.o: %.c $(DEPS)
+$(OBJFOLDER)/%.o: %.cpp $(DEPS)
 	$(CC) -o $@ -c $< $(CFLAGS)
 test: $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS)
