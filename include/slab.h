@@ -1,4 +1,7 @@
 // File: slab.h
+#ifndef _SLAB_H_
+#define _SLAB_H_
+
 #include <stdlib.h>
 
 typedef struct kmem_cache_s kmem_cache_t;
@@ -24,3 +27,5 @@ void kmem_cache_destroy(kmem_cache_t *cachep); // Deallocate cache
 void kmem_cache_info(kmem_cache_t *cachep); // Print cache info
 
 int kmem_cache_error(kmem_cache_t *cachep); // Print error message
+
+#endif
