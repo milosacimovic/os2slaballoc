@@ -1,6 +1,6 @@
 //File: memory.cpp
-#include <slab.h>
+#include <init.h>
 
-int is_power_of_two(int block_num){
-  return !(block_num & (block_num - 1));
+bool is_power_of_two(int x){
+  return ((x != 0) && !(x & (x - 1)));
 }
