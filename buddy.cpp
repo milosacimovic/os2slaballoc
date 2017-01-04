@@ -24,11 +24,11 @@ buddy_t* buddy_init(void *space, unsigned int max_order){
     buddy->max_order = max_order;
     buddy->num_blocks = pow(2,max_order);
 	buddy->available = (list_ctl_t*)((buddy_t*)space + 1);
-	buddy->tag_bits = (unsigned long*)((char*)(buddy->available) + (max_order + 1)*sizeof(list_ctl_t));
+	buddy->tag_bits = (unsigned long*)(buddy->available + max_order + 1);
     //unsigned long is 64 bit long which can track 64 blocks
 	//number of unsigned longs needed is equal to
 	// (buddy->num_blocks + 64 - 1) / 64
-	buddy->base_addr = (unsigned long)((char*)buddy->tag_bits + BITS_TO_LONGS(buddy->num_blocks)*sizeof(long));
+	buddy->base_addr = (unsigned long)(buddy->tag_bits + BITS_TO_LONGS(buddy->num_blocks));
     for(unsigned int i = 0; i < max_order + 1; i++){
         list_init(&(buddy->available[i]));
     }
@@ -52,7 +52,7 @@ buddy_t* buddy_init(void *space, unsigned int max_order){
 unsigned long block_to_id(buddy_t *buddy, block_t *block){
 	unsigned int blk_size_order = log2(BLOCK_SIZE);
 	unsigned long block_id = ((unsigned long)block - buddy->base_addr) >> blk_size_order;
-	assert(block_id >= buddy->num_blocks);
+	assert(block_id < buddy->num_blocks);
 	return block_id;
 }
 
@@ -72,7 +72,7 @@ void* find_buddy(buddy_t *buddy, block_t *block, unsigned int order){
 	unsigned long _block;
 	unsigned long _buddy;
 
-	assert((unsigned long)block < buddy->base_addr);
+	assert((unsigned long)block >= buddy->base_addr);
 	if(order < 0) order = 0;
 	/* Make block address to be zero-relative */
 	_block = (unsigned long)block - buddy->base_addr;
@@ -88,11 +88,11 @@ void* buddy_alloc(buddy_t *buddy, unsigned int order){
     unsigned int j;
 	list_ctl_t *list;
 	block_t *block;
-	unsigned long buddy_group_start_block;
+	unsigned long buddy_block_num;
 	block_t *buddy_group_start_blk;
 
-	assert(buddy == nullptr);
-	assert(order > buddy->max_order);
+	assert(buddy != nullptr);
+	assert(order <= buddy->max_order);
 	if(order < 0) order = 0;
 
 	for (j = order; j <= buddy->max_order; j++) {
@@ -107,11 +107,11 @@ void* buddy_alloc(buddy_t *buddy, unsigned int order){
 		/* Trim if a higher order block than necessary was allocated */
 		while (j > order) {
 			--j;
-			buddy_group_start_block = 1UL << j;
-			buddy_group_start_blk = (block_t *)((unsigned long)block + (buddy_group_start_block << (unsigned)MIN_ORDER_LOG));
+			buddy_block_num = 1UL << j;
+			buddy_group_start_blk = (block_t *)((unsigned long)block + (buddy_block_num << (unsigned)MIN_ORDER_LOG));
 			buddy_group_start_blk->order = j;
 			mark_available(buddy, buddy_group_start_blk);
-			list_add(&buddy_group_start_blk->link, &buddy->available[j]);
+			list_add(&buddy->available[j], &buddy_group_start_blk->link);
 		}
 
 		return block;
@@ -121,8 +121,8 @@ void* buddy_alloc(buddy_t *buddy, unsigned int order){
 }
 void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
     block_t* block  = nullptr;
-	assert(buddy == nullptr);
-	assert(order > buddy->max_order);
+	assert(buddy != nullptr);
+	assert(order <= buddy->max_order);
 
 	/* Fixup requested order to be at least the minimum supported */
 	if (order < 0)
@@ -130,12 +130,13 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 
 	/* Overlay block structure on the memory group being freed */
 	block = (block_t*) addr;
-	assert(is_available(buddy, block));
+	assert(!is_available(buddy, block));
 
 	/* Coalesce as much as possible with adjacent free buddy blocks */
 	while (order < buddy->max_order) {
 		/* Determine our buddy block's address */
 		block_t * buddy_group =(block_t*) find_buddy(buddy, block, order);
+
 
 		/* Make sure buddy is available and has the same size as us */
 		if (!is_available(buddy, buddy_group))
@@ -154,7 +155,7 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 	/* Add the (possibly coalesced) block to the appropriate free list */
 	block->order = order;
 	mark_available(buddy, block);
-	list_add(&block->link, &buddy->available[order]);
+	list_add(&buddy->available[order], &block->link);
 }
 
 void buddy_allocator_log(buddy_t *buddy){
@@ -175,6 +176,11 @@ void buddy_allocator_log(buddy_t *buddy){
                 ++num_groups;
             }
         }
-		printf("  order %2u: %lu free groups\n", i, num_groups);
+		if(num_groups == 1){
+			printf("  order %2u: %lu free group\n", i, num_groups);
+		}else{
+			printf("  order %2u: %lu free groups\n", i, num_groups);
+
+		}
 	}
 }
