@@ -3,8 +3,10 @@
 #define _BUDDY_H_
 
 #include <list.h>
-#define BITS_IN_BYTE 8
-#define BITS_PER_LONG (sizeof(long) * BITS_IN_BYTE)
+#include <slab.h>
+#include <stdio.h>
+#define BITS_PER_BYTE 8
+#define BITS_PER_LONG (sizeof(long) * BITS_PER_BYTE)
 #define MIN_ORDER_LOG (log2(BLOCK_SIZE))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 #define BITS_TO_LONGS(num) DIV_ROUND_UP(num, BITS_PER_BYTE * sizeof(long))
@@ -28,7 +30,7 @@ typedef struct free_group{
 } block_t;
 
 
-void buddy_init(void *space, int block_num);
+buddy_t* buddy_init(void *space, unsigned int block_num);
 /**
 * This function initializes the beginning of the memory
 * with a structure that controles the buddy block allocation
@@ -36,19 +38,19 @@ void buddy_init(void *space, int block_num);
 * @space: pointer to first memory location
 * @block_num: number of blocks that need to be managed
 */
-void* buddy_alloc(buddy_ctl_t *buddy, unsigned int order);
+void* buddy_alloc(buddy_t *buddy, unsigned int order);
 /**
 * This function allocates 2^order blocks and
 * returns the address if the allocation was successful
 * @order: 2^order(blocks) sized group is allocated
 */
-void buddy_free(buddy_ctl_t *buddy, void *addr, unsigned int order);
+void buddy_free(buddy_t *buddy, void *addr, unsigned int order);
 /**
 * This function frees the group of blocks
 * @addr: address of the first block in the group
 * @order: 2^order(blocks) sized group
 */
-void buddy_allocator_log(buddy_ctl_t *buddy);
+void buddy_allocator_log(buddy_t *buddy);
 /**
 * This function initializes logs the current
 * state of the buddy allocator

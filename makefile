@@ -4,7 +4,7 @@ CC=g++
 CFLAGS=-Wall -I$(INCLUDE) -std=c++11
 
 _DEPS =
-_OBJ = test.o memory.o list.o
+_OBJ = test.o memory.o list.o buddy.o
 
 DEPS = $(patsubst %,$(INCLUDE)/%,$(_DEPS))
 OBJ = $(patsubst %,$(OBJFOLDER)/%,$(_OBJ))

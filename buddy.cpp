@@ -2,7 +2,7 @@
 #include <buddy.h>
 #include <init.h>
 #include <math.h>
-#include <slab.h>
+#include <assert.h>
 
 void set_bit(unsigned long bit, unsigned long* addr){
 	unsigned long mask = BIT_MASK(bit);
@@ -19,14 +19,12 @@ bool test_bit(unsigned long bit, unsigned long* addr){
 	return (addr[BIT_WORD(bit)] & mask); 
 }
 
-buddy_t* buddy_init(void *space, int block_num){
+buddy_t* buddy_init(void *space, unsigned int max_order){
     buddy_t *buddy = (buddy_t*)space;
-    
-    unsigned int max_order = log2(next_power_of_two(block_num));
     buddy->max_order = max_order;
-    buddy->num_blocks = next_power_of_two(block_num);
+    buddy->num_blocks = pow(2,max_order);
 	buddy->available = (list_ctl_t*)((buddy_t*)space + 1);
-	buddy->tag_bits = (unsigned long*)((char*)available + (max_order + 1)*sizeof(list_ctl_t));
+	buddy->tag_bits = (unsigned long*)((char*)(buddy->available) + (max_order + 1)*sizeof(list_ctl_t));
     //unsigned long is 64 bit long which can track 64 blocks
 	//number of unsigned longs needed is equal to
 	// (buddy->num_blocks + 64 - 1) / 64
@@ -35,7 +33,7 @@ buddy_t* buddy_init(void *space, int block_num){
         list_init(&(buddy->available[i]));
     }
 	//initially the bitmap says that all blocks are taken
-	for(int i=0; i < BITS_TO_LONGS(buddy->num_blocks); i++){
+	for(unsigned int i=0; i < BITS_TO_LONGS(buddy->num_blocks); i++){
 		buddy->tag_bits[i] = 0;
 	}
 	//all blocks make up an entire group of free blocks
@@ -54,7 +52,7 @@ buddy_t* buddy_init(void *space, int block_num){
 unsigned long block_to_id(buddy_t *buddy, block_t *block){
 	unsigned int blk_size_order = log2(BLOCK_SIZE);
 	unsigned long block_id = ((unsigned long)block - buddy->base_addr) >> blk_size_order;
-	BUG_ON(block_id >= buddy->num_blocks);
+	assert(block_id >= buddy->num_blocks);
 	return block_id;
 }
 
@@ -74,27 +72,27 @@ void* find_buddy(buddy_t *buddy, block_t *block, unsigned int order){
 	unsigned long _block;
 	unsigned long _buddy;
 
-	BUG_ON((unsigned long)block < buddy->base_addr);
+	assert((unsigned long)block < buddy->base_addr);
 	if(order < 0) order = 0;
 	/* Make block address to be zero-relative */
 	_block = (unsigned long)block - buddy->base_addr;
 
 	/* Calculate buddy in zero-relative space */
-	unsigned long buddy = 1UL << order;
-	_buddy = _block ^ (buddy << MIN_ORDER_LOG);
+	unsigned long __buddy = 1UL << order;
+	_buddy = _block ^ (__buddy << (unsigned)MIN_ORDER_LOG);
 	/* Return the buddy's address */
 	return (void *)(_buddy + buddy->base_addr);
 }
 
-void* buddy_alloc(buddy_ctl_t *buddy, unsigned int order){
+void* buddy_alloc(buddy_t *buddy, unsigned int order){
     unsigned int j;
 	list_ctl_t *list;
 	block_t *block;
-	unsigned long *buddy_group_start_block;
+	unsigned long buddy_group_start_block;
 	block_t *buddy_group_start_blk;
 
-	BUG_ON(buddy == nullptr);
-	BUG_ON(order > buddy->max_order);
+	assert(buddy == nullptr);
+	assert(order > buddy->max_order);
 	if(order < 0) order = 0;
 
 	for (j = order; j <= buddy->max_order; j++) {
@@ -103,14 +101,14 @@ void* buddy_alloc(buddy_ctl_t *buddy, unsigned int order){
 		list = &buddy->available[j];
 		if (list_empty(list)) continue;
 		block = list_entry(list->next, block_t, link);
-		list_del(&block->link);
+		list_del_el(&block->link);
 		mark_allocated(buddy, block);
 
 		/* Trim if a higher order block than necessary was allocated */
 		while (j > order) {
 			--j;
 			buddy_group_start_block = 1UL << j;
-			buddy_group_start_blk = (block_t *)((unsigned long)block + (buddy_group_start_block << MIN_ORDER_LOG));
+			buddy_group_start_blk = (block_t *)((unsigned long)block + (buddy_group_start_block << (unsigned)MIN_ORDER_LOG));
 			buddy_group_start_blk->order = j;
 			mark_available(buddy, buddy_group_start_blk);
 			list_add(&buddy_group_start_blk->link, &buddy->available[j]);
@@ -123,8 +121,8 @@ void* buddy_alloc(buddy_ctl_t *buddy, unsigned int order){
 }
 void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
     block_t* block  = nullptr;
-	BUG_ON(buddy == nullptr);
-	BUG_ON(order > buddy->max_order);
+	assert(buddy == nullptr);
+	assert(order > buddy->max_order);
 
 	/* Fixup requested order to be at least the minimum supported */
 	if (order < 0)
@@ -132,12 +130,12 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 
 	/* Overlay block structure on the memory group being freed */
 	block = (block_t*) addr;
-	BUG_ON(is_available(buddy, block));
+	assert(is_available(buddy, block));
 
 	/* Coalesce as much as possible with adjacent free buddy blocks */
 	while (order < buddy->max_order) {
 		/* Determine our buddy block's address */
-		block_t * buddy_group = find_buddy(buddy, block, order);
+		block_t * buddy_group =(block_t*) find_buddy(buddy, block, order);
 
 		/* Make sure buddy is available and has the same size as us */
 		if (!is_available(buddy, buddy_group))
@@ -146,7 +144,7 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 			break;
 
 		/* buddy coalesce! */
-		list_del(&buddy_group->link);
+		list_del_el(&buddy_group->link);
 		if (buddy_group < block)
 			block = buddy_group;
 		++order;
@@ -165,7 +163,7 @@ void buddy_allocator_log(buddy_t *buddy){
 	list_ctl_t *entry;
 
 	printf("DUMP OF BUDDY MEMORY POOL:\n");
-	printf("  Area Order=%lu\n", 
+	printf("  Area Order=%u\n", 
 	       buddy->max_order);
 
 	for (i = 0; i <= buddy->max_order; i++) {
@@ -173,10 +171,10 @@ void buddy_allocator_log(buddy_t *buddy){
 		/* Count the number of memory blocks in the list */
 		num_groups = 0;
 		list_for_each(entry, &buddy->available[i]){
-            if(!list->empty(&(buddy->available[i]))){
+            if(!list_empty(&(buddy->available[i]))){
                 ++num_groups;
             }
         }
-		printf("  order %2lu: %lu free groups\n", i, num_blocks);
+		printf("  order %2u: %lu free groups\n", i, num_groups);
 	}
 }
