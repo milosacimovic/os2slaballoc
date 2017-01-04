@@ -24,16 +24,16 @@
 typedef struct list_el{
   struct list_el *prev;
   struct list_el *next;
-} list_ctl;
+} list_ctl_t;
 
 
-void list_init(list_ctl* head);
+void list_init(list_ctl_t* head);
 /**
  * list_init - initialize the list
  * @head:	pointer to list head.
  */
 
-void list_add_after_prev(list_ctl *new_el, list_ctl *prev, list_ctl *next);
+void list_add_after_prev(list_ctl_t *new_el, list_ctl_t *prev, list_ctl_t *next);
 /**
  * list_add_after_prev - adds element after previous
  * @new_el:	pointer to new element.
@@ -41,44 +41,44 @@ void list_add_after_prev(list_ctl *new_el, list_ctl *prev, list_ctl *next);
  * @next:	pointer to next element. 
  */
 
-void list_add(list_ctl *head, list_ctl *new_el);
+void list_add(list_ctl_t *head, list_ctl_t *new_el);
 /**
  * list_add - adds element to beginning of the list.
  * @new_el:	pointer to new element.
  * @head:	pointer to head of the list.
  */
 
-void list_add_tail(list_ctl *head, list_ctl *new_el);
+void list_add_tail(list_ctl_t *head, list_ctl_t *new_el);
 /**
  * list_add_tail - adds element to end of the list.
  * @new_el:	pointer to new element.
  * @head:	pointer to head of the list.
  */
 
-void list_del_helper(list_ctl *prev, list_ctl *next);
+void list_del_helper(list_ctl_t *prev, list_ctl_t *next);
 /**
  * list_add_helper - adds element to beginning of the list.
  * @new_el:	pointer to new element.
  * @head:	pointer to head of the list.
  */
 
-void list_del_el(list_ctl *el);
+void list_del_el(list_ctl_t *el);
 /**
  * list_del_el - unlinks el element.
  * @el:	pointer to element to be deleted.
  */
-bool list_empty(list_ctl *head);
+bool list_empty(list_ctl_t *head);
 /**
  * list_empty - returns true if list is empty, otherwise false.
  * @head:	pointer to head of the list.
  */
-bool list_is_last(list_ctl *head, list_ctl* last);
+bool list_is_last(list_ctl_t *head, list_ctl_t* last);
 /**
  * list_is_last - adds element to beginning of the list.
  * @head:	pointer to head of the list.
  * @last:	pointer to element to be tested as last.
  */
-void list_replace(list_ctl *old, list_ctl *new_el);
+void list_replace(list_ctl_t *old, list_ctl_t *new_el);
 /**
  * list_replace - replaces old with the new.
  * @old:	pointer to old element.
