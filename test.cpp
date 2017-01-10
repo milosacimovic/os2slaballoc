@@ -1,26 +1,20 @@
-#include <iostream>
-#include <buddy.h>
-#include <stdlib.h>
-#include <math.h>
-using namespace std;
-#define BLOCK_NUMBER 256
+#include <vector>
+#include <thread>
+#include <cstdio>
 
-int main(int argc, char *argv[]){
-    void* space = malloc(BLOCK_SIZE * BLOCK_NUMBER);
-    buddy_t* buddy_allocator = buddy_init(space, floor(log2(BLOCK_NUMBER)));
-    buddy_allocator_log(buddy_allocator);
-    block_t* group1 = (block_t*)buddy_alloc(buddy_allocator, 0);
-    buddy_allocator_log(buddy_allocator);
-    block_t* group2 = (block_t*)buddy_alloc(buddy_allocator, 4);
-    buddy_allocator_log(buddy_allocator);
-    block_t* group3 = (block_t*)buddy_alloc(buddy_allocator, 6);
-    buddy_allocator_log(buddy_allocator);
-    block_t* group4 = (block_t*)buddy_alloc(buddy_allocator, 4);
-    buddy_allocator_log(buddy_allocator);
-    block_t* group5 = (block_t*)buddy_alloc(buddy_allocator, 6);
-    buddy_allocator_log(buddy_allocator);
-    buddy_free(buddy_allocator, (void*)group1, 0);
-    buddy_allocator_log(buddy_allocator);
+#include <slab.h>
+#include <test.h>
 
-    free(space);
-}
+	void run_threads(int (*work)(struct data_s), void *data, int num) {
+		std::vector<std::thread> threads;
+		for (int i = 0; i < num; i++) {
+			struct data_s private_data = *(struct data_s*) data;
+			private_data.id = i + 1;
+			threads.emplace_back(work, private_data);
+		}
+
+		for (int i = 0; i < num; i++) {
+			threads[i].join();
+		}
+	}
+
