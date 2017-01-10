@@ -1,10 +1,10 @@
 INCLUDE = ./include
 OBJFOLDER =obj
 CC=g++
-CFLAGS=-Wall -I$(INCLUDE) -std=c++11
+CFLAGS=-Wall -I$(INCLUDE) -std=c++11 -pthread
 
-_DEPS =
-_OBJ = test.o memory.o list.o buddy.o
+_DEPS = init.h list.h buddy.h slab.h test.h
+_OBJ = test.o memory.o list.o buddy.o slab.o main.o
 
 DEPS = $(patsubst %,$(INCLUDE)/%,$(_DEPS))
 OBJ = $(patsubst %,$(OBJFOLDER)/%,$(_OBJ))

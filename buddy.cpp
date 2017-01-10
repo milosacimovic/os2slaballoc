@@ -84,7 +84,7 @@ void* find_buddy(buddy_t *buddy, block_t *block, unsigned int order){
 	return (void *)(_buddy + buddy->base_addr);
 }
 
-void* buddy_alloc(buddy_t *buddy, unsigned int order){
+block_t* buddy_alloc(buddy_t *buddy, unsigned int order){
     unsigned int j;
 	list_ctl_t *list;
 	block_t *block;
@@ -101,6 +101,7 @@ void* buddy_alloc(buddy_t *buddy, unsigned int order){
 		list = &buddy->available[j];
 		if (list_empty(list)) continue;
 		block = list_entry(list->next, block_t, link);
+		block->order = j;
 		list_del_el(&block->link);
 		mark_allocated(buddy, block);
 

@@ -2,10 +2,10 @@
 #ifndef _BUDDY_H_
 #define _BUDDY_H_
 
-#include <list.h>
 #include <slab.h>
-#include <stdio.h>
+
 #define BITS_PER_BYTE 8
+#define BYTES_PER_WORD 4
 #define BITS_PER_LONG (sizeof(long) * BITS_PER_BYTE)
 #define MIN_ORDER_LOG (log2(BLOCK_SIZE))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
@@ -38,7 +38,7 @@ buddy_t* buddy_init(void *space, unsigned int block_num);
 * @space: pointer to first memory location
 * @block_num: number of blocks that need to be managed
 */
-void* buddy_alloc(buddy_t *buddy, unsigned int order);
+block_t* buddy_alloc(buddy_t *buddy, unsigned int order);
 /**
 * This function allocates 2^order blocks and
 * returns the address if the allocation was successful
