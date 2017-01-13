@@ -1,7 +1,7 @@
 INCLUDE = ./include
 OBJFOLDER =obj
 CC=g++
-CFLAGS=-Wall -I$(INCLUDE) -std=c++11 -pthread
+CFLAGS=-Wall -I$(INCLUDE) -std=c++11 -pthread -g
 
 _DEPS = init.h list.h buddy.h slab.h test.h
 _OBJ = test.o memory.o list.o buddy.o slab.o main.o

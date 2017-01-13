@@ -8,13 +8,11 @@
 #include <math.h>
 /**/
 #define SIZES 13
-#define BLOCK_ORDER 12
 /**/
 #define GET_GROUP_CACHE(blk) ((kmem_cache_t*)(((block_t*)(blk))->link.next))
-#define GET_GROUP_SLAB(blk) ((slab_t*)(((block_t*)(blk))->link.prev))
+#define GET_GROUP_SLAB(blk) ((slab_t*)((block_t*)(blk) + 1))
 #define SET_GROUP_CACHE(blk, cache) ((blk)->link.next = (list_ctl_t*)cache)
-#define SET_GROUP_SLAB(blk, slab) ((blk)->link.prev = (list_ctl_t*)slab)
-#define ADDR_TO_BLOCK(addr) ((unsigned long)addr)&(~(BLOCK_SIZE-1))
+#define ADDR_TO_BLOCK(addr) ((unsigned long)addr)&(~(BLOCK_SIZE-1))//this is questionable
 /**/
 #define SLAB_BUFFER(slabp) ((buf_t*)(((slab_t*)(slabp))+1))
 #define EOB -1
@@ -23,11 +21,11 @@
 /*free buffer element*/
 typedef unsigned int buf_t;
 /*base address*/
-static unsigned long base_address;
+unsigned long base_address;
 /*buddy allocator*/
-static buddy_t* buddy_allocator;
+buddy_t* buddy_allocator;
 /**/
-static std::mutex chain_mtx;
+std::mutex chain_mtx;
 /*element of array of size-N cache control structure*/
 typedef struct sizes_cs{
         size_t obj_size;
@@ -72,18 +70,23 @@ void calculate_cache_params(kmem_cache_t* cachep){
         size_t obj_size = cachep->obj_size;
         unsigned int unused = 0;
         unsigned int order = 0;
-        unsigned int available = BLOCK_SIZE - (sizeof(block_t) + sizeof(slab_t));
-        while(obj_size > available){ /*if the obj_size is greater than BLOCK_SIZE*/
-                order++;
-                available += BLOCK_SIZE;
+        unsigned int available = BLOCK_SIZE - (sizeof(block_t) + sizeof(slab_t)+sizeof(buf_t));
+
+        unsigned int obj_per_slab = 1;
+        if(obj_size < available){
+                while(obj_per_slab*obj_size + obj_per_slab*sizeof(buf_t) < available){
+                        obj_per_slab++;
+                }
+                obj_per_slab--;
+        }else{
+                while(obj_size > available){ /*if the obj_size is greater than BLOCK_SIZE*/
+                        order++;
+                        available += BLOCK_SIZE;
+                }
         }
         //ERROR: group of blocks is too big to handle
         if(order > buddy_allocator->max_order)
                 cachep->failures = 2;
-        unsigned int obj_per_slab = 0;
-        while(obj_per_slab*obj_size + obj_per_slab*sizeof(buf_t) <= available){
-                obj_per_slab++;
-        }
         unused = available - (obj_per_slab*obj_size + obj_per_slab*sizeof(buf_t));
        
         cachep->num_obj_per_slab = obj_per_slab;
@@ -102,12 +105,13 @@ void kmem_init(void *space, int block_num){
         list_init(&cache_kmem->slabs_full);
         list_init(&cache_kmem->slabs_partial);
         list_init(&cache_kmem->slabs_free);
+        
         cache_kmem->obj_size = sizeof(kmem_cache_t);
+        
         strcpy(cache_kmem->name, "cache_kmem");
+        
         /*cache chain resides in cache_kmem->next*/
         list_init(&cache_kmem->next);
-        /*calculating the color_range and slab size*/
-        calculate_cache_params(cache_kmem);
         /*rest of cache_kmem initializiation*/
         cache_kmem->total_num_obj = 0;
         cache_kmem->ctor = kmem_mutex_ctor;
@@ -115,6 +119,7 @@ void kmem_init(void *space, int block_num){
         cache_kmem->failures = 0;
         cache_kmem->growing = 0;
         cache_kmem->shrinked = 0;
+        
         cache_kmem->mutexp =new((void*)(&cache_kmem->mutex)) std::mutex();
 
         /*2^5, 2^6, 2^7, 2^8, 2^9, 2^10, 2^11, 2^12, 2^13, 2^14, 2^15, 2^16, 2^17,*/
@@ -129,8 +134,10 @@ void kmem_init(void *space, int block_num){
         /*creating buddy allocator interface*/
         sizes_cs += SIZES + 1;
         unsigned int max_order = floor(log2(block_num));
-        buddy_t* buddy_allocator = buddy_init((void*)sizes_cs, max_order);
-
+        
+        buddy_allocator = buddy_init((void*)sizes_cs, max_order);
+        /*calculating the color_range and slab size*/
+        calculate_cache_params(cache_kmem);
 }
 
 
@@ -149,11 +156,15 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
         /*check for bad usage*/
         assert(name != nullptr);
         assert(strlen(name) < CACHE_NAME);
-        assert(size > BYTES_PER_WORD);
+        //assert(size > BYTES_PER_WORD);
         if(dtor)
           assert(ctor);
         kmem_cache_t* cache_kmem = (kmem_cache_t*)base_address;
-        kmem_cache_t* cache;
+        kmem_cache_t* cache = (kmem_cache_t*)kmem_cache_alloc(cache_kmem);
+        //ERROR: cache couldn't be allocated from cache_kmem
+        if(!cache){
+                return cache;
+        }
         chain_mtx.lock();
                 list_ctl_t *head = &cache_kmem->next;
                 list_ctl_t *pos;
@@ -168,12 +179,6 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
 
                 list_add(&cache_kmem->next, &cache->next);
         chain_mtx.unlock();
-        cache = (kmem_cache_t*)kmem_cache_alloc(cache_kmem);
-        //ERROR: cache couldn't be allocated from cache_kmem
-        if(!cache){
-                return cache;
-        }
-        
         strcpy(cache->name, name);
         cache->obj_size = size;
         list_init(&cache->slabs_full);
@@ -187,8 +192,6 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
         cache->failures = 0;
         cache->growing = 0;
         cache->shrinked = 0;
-        
-        
         return cache;
         
 }
@@ -199,10 +202,10 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
 void init_objs(kmem_cache_t* cachep, slab_t* slabp){
         unsigned int i;
         void* objp = slabp->start_mem;
-        for(i = 0; i < cachep->num_obj_per_slab; i++){
+        for(i = 1; i < cachep->num_obj_per_slab; i++){
                 if(cachep->ctor != nullptr)
                         cachep->ctor(objp);
-                objp = (void*)(((char*)objp)+cachep->obj_size*i);
+                objp = (void*)(((char*)objp)+cachep->obj_size);
         }
         for(i = 0;i < cachep->num_obj_per_slab - 1; i++){
                  SLAB_BUFFER(slabp)[i] = i+1;
@@ -231,7 +234,6 @@ slab_t* add_slab(kmem_cache_t* cachep){
                  cachep->color_next = 0;
          color *= CACHE_L1_LINE_SIZE;
          /*keep track of to which slab and cache object belongs*/
-         SET_GROUP_SLAB(group, group + 1);
          SET_GROUP_CACHE(group, cachep);
          slab = (slab_t*)(group + 1);
          /*total number of objects in a cache
@@ -240,7 +242,7 @@ slab_t* add_slab(kmem_cache_t* cachep){
          cachep->total_num_obj += cachep->num_obj_per_slab;
          slab->color = color;
          slab->obj_inuse = 0;
-         slab->start_mem = (void *)((char*)(((buf_t*)(slab + 1))+cachep->num_obj_per_slab)+slab->color);
+         slab->start_mem = (void *)((unsigned char*)(((buf_t*)(slab + 1))+cachep->num_obj_per_slab)+slab->color);
          if(cachep->shrinked)
                 cachep->growing = 1;
          /*initialize all objects and array 
@@ -278,8 +280,6 @@ void* get_obj_from_slab(kmem_cache_t* cachep, slab_t* slabp){
 slab_t* choose_slab(kmem_cache_t* cachep){
         list_ctl_t *slabs_partial, *first;
         slab_t* slab;
-
-
         slabs_partial = &cachep->slabs_partial;
         first = slabs_partial->next;
         if(list_empty(slabs_partial)){
@@ -347,8 +347,11 @@ void ret_obj_to_slab(kmem_cache_t* cachep, slab_t* slabp, void *objp){
                 cachep->dtor(objp);
                 if(cachep->ctor != nullptr) //should always happen
                         cachep->ctor(objp);
+        }else{
+                if(cachep->ctor != nullptr)
+                        cachep->ctor(objp);
         }
-        buf_t obj_ind = ((char*)objp - (char*)(slabp->start_mem))/cachep->obj_size;
+        buf_t obj_ind = ((char*)objp - (char*)slabp->start_mem)/cachep->obj_size;
         SLAB_BUFFER(slabp)[obj_ind] = slabp->free;
         slabp->free = obj_ind;
         unsigned int inuse = slabp->obj_inuse;
@@ -367,14 +370,14 @@ void ret_obj_to_slab(kmem_cache_t* cachep, slab_t* slabp, void *objp){
  * @objp: pointer to object being deallocated
  */
 void kmem_cache_free_helper(kmem_cache_t *cachep, const void *objp){
-        slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));
+        slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));//questionable
         cachep->mutexp->lock();
         ret_obj_to_slab(cachep, slab, objp);
         cachep->mutexp->unlock();
         
 }
 void kmem_cache_free_helper(kmem_cache_t *cachep, void *objp){
-        slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));
+        slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));//questionable
         cachep->mutexp->lock();
         ret_obj_to_slab(cachep, slab, objp);
         cachep->mutexp->unlock();
@@ -529,7 +532,7 @@ void kmem_cache_info(kmem_cache_t *cachep){ // Print cache info
         printf("%-19s%-19Zd%-19Zd%-19Zd%-19u%-19.2f\n",cachep->name,cachep->obj_size, 
                 (size_t)(pow(2, cachep->blocks_order_per_slab)*slab_cnt),
                 slab_cnt, cachep->num_obj_per_slab, 
-                (float)total_num/num_active_obj*100);
+                num_active_obj ? (float)num_active_obj/total_num*100 : 0);
         
 
 }

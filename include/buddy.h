@@ -5,7 +5,7 @@
 #include <slab.h>
 
 #define BITS_PER_BYTE 8
-#define BYTES_PER_WORD 4
+#define BYTES_PER_WORD 8
 #define BITS_PER_LONG (sizeof(long) * BITS_PER_BYTE)
 #define MIN_ORDER_LOG (log2(BLOCK_SIZE))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))

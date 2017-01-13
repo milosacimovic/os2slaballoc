@@ -28,7 +28,7 @@ buddy_t* buddy_init(void *space, unsigned int max_order){
     //unsigned long is 64 bit long which can track 64 blocks
 	//number of unsigned longs needed is equal to
 	// (buddy->num_blocks + 64 - 1) / 64
-	buddy->base_addr = (unsigned long)(buddy->tag_bits + BITS_TO_LONGS(buddy->num_blocks));
+	
     for(unsigned int i = 0; i < max_order + 1; i++){
         list_init(&(buddy->available[i]));
     }
@@ -38,6 +38,9 @@ buddy_t* buddy_init(void *space, unsigned int max_order){
 	}
 	//all blocks make up an entire group of free blocks
 	//and the first_block is linked to max_order list
+	buddy->base_addr = (unsigned long)(buddy->tag_bits + BITS_TO_LONGS(buddy->num_blocks));
+	buddy->base_addr += BLOCK_SIZE - 1;
+	buddy->base_addr &= ~(BLOCK_SIZE - 1);
 	block_t *first_block = (block_t*)buddy->base_addr;
 	first_block->order = max_order;
 	list_add(&buddy->available[max_order], &first_block->link);
@@ -136,8 +139,9 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 	/* Coalesce as much as possible with adjacent free buddy blocks */
 	while (order < buddy->max_order) {
 		/* Determine our buddy block's address */
+		
 		block_t * buddy_group =(block_t*) find_buddy(buddy, block, order);
-
+		printf("buddy address %p\n", buddy_group);
 
 		/* Make sure buddy is available and has the same size as us */
 		if (!is_available(buddy, buddy_group))
