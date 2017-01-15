@@ -175,6 +175,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
                                 
                                 kmem_cache_free(cache_kmem, cache);
                                 cache = entry;
+                                chain_mtx.unlock();
                                 return cache;
                         }
                 }
@@ -396,6 +397,7 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp){
         if(!objp)
           return;
         kmem_cache_free_helper(cachep, objp);
+
 }
 /*function to call destructor for every object on the slab
  * and to give back the blocks allocted to the buddy memory pool
@@ -453,13 +455,15 @@ int kmem_cache_shrink(kmem_cache_t *cachep){ //Deallocate slabs_free under the c
  */
 void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
         if(cachep == nullptr) return;
-        /*unlink this caches management from cache chain*/
+             
+        /*destroy any slabs left in the slabs_free*/
+        
+        cachep->mutex.lock();
+        cachep->growing = 0;
+        /*unlink this caches management from cache chain*/ 
         chain_mtx.lock();
         list_del_el(&cachep->next);
         chain_mtx.unlock();
-        /*destroy any slabs left in the slabs_free*/
-        cachep->growing = 0;
-        cachep->mutex.lock();
         shrink_cache(cachep);
         cachep->mutex.unlock();
         //ERROR: user hasn't freed all objects
@@ -471,9 +475,9 @@ void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
         kmem_cache_t* cache_kmem = (kmem_cache_t*)base_address;
         kmem_cache_free(cache_kmem, cachep);
         cache_kmem->ref_count--;
+        
         /*shrink any size-N caches*/
         sizes_cs_t *sizes_cp = (sizes_cs_t*)((kmem_cache_t*)base_address + 1);
-        chain_mtx.lock();
         for (; sizes_cp->obj_size; sizes_cp++) { 
                 if (sizes_cp->cachep){
                         bool del = false;
@@ -484,13 +488,14 @@ void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
                         if(del == true){
                                 kmem_cache_free(cache_kmem, sizes_cp->cachep);
                                 cache_kmem->ref_count--;
+                                chain_mtx.lock();
                                 list_del_el(&sizes_cp->cachep->next);
+                                chain_mtx.unlock();
                                 sizes_cp->cachep = nullptr;
                         }
                         
                 }
         }      
-        chain_mtx.unlock();
         if(cache_kmem->ref_count == 0) {
                 kmem_cache_shrink(cache_kmem);
         }
@@ -528,7 +533,6 @@ void *kmalloc(size_t size){
  */
 void kfree(const void *objp){
      kmem_cache_t *cache;
- 
      if (!objp)
         return;
      cache = GET_GROUP_CACHE(ADDR_TO_BLOCK(objp));
