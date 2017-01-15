@@ -119,6 +119,7 @@ void kmem_init(void *space, int block_num){
         cache_kmem->failures = 0;
         cache_kmem->growing = 0;
         cache_kmem->shrinked = 0;
+        cache_kmem->ref_count = 0;
         
         cache_kmem->mutexp =new((void*)(&cache_kmem->mutex)) std::mutex();
 
@@ -171,6 +172,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
                 list_for_each(pos, head){
                         kmem_cache_t* entry = list_entry(pos, kmem_cache_t,next);
                         if(strcmp(name, entry->name) == 0){
+                                
                                 kmem_cache_free(cache_kmem, cache);
                                 cache = entry;
                                 return cache;
@@ -179,6 +181,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
 
                 list_add(&cache_kmem->next, &cache->next);
         chain_mtx.unlock();
+        cache_kmem->ref_count++;
         strcpy(cache->name, name);
         cache->obj_size = size;
         list_init(&cache->slabs_full);
@@ -305,14 +308,14 @@ slab_t* choose_slab(kmem_cache_t* cachep){
 void* kmem_cache_alloc_helper(kmem_cache_t* cachep){
         void* objp;
         slab_t* slab;
-        cachep->mutexp->lock();
+        cachep->mutex.lock();
         slab = choose_slab(cachep);
         if(!slab){
-                cachep->mutexp->unlock();
+                cachep->mutex.unlock();
                 return slab;
         }
         objp = get_obj_from_slab(cachep, slab);
-        cachep->mutexp->unlock();
+        cachep->mutex.unlock();
         return objp;
 }
 
@@ -371,16 +374,16 @@ void ret_obj_to_slab(kmem_cache_t* cachep, slab_t* slabp, void *objp){
  */
 void kmem_cache_free_helper(kmem_cache_t *cachep, const void *objp){
         slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));//questionable
-        cachep->mutexp->lock();
+        cachep->mutex.lock();
         ret_obj_to_slab(cachep, slab, objp);
-        cachep->mutexp->unlock();
+        cachep->mutex.unlock();
         
 }
 void kmem_cache_free_helper(kmem_cache_t *cachep, void *objp){
         slab_t* slab = GET_GROUP_SLAB(ADDR_TO_BLOCK(objp));//questionable
-        cachep->mutexp->lock();
+        cachep->mutex.lock();
         ret_obj_to_slab(cachep, slab, objp);
-        cachep->mutexp->unlock();
+        cachep->mutex.unlock();
         
 }
 /*wrapper function around the function that determines
@@ -422,6 +425,8 @@ int shrink_cache(kmem_cache_t* cachep){
                 if(list_empty(&cachep->slabs_free)) break;
                 ret++;
                 list_ctl_t* entry = cachep->slabs_free.next;
+                slab_t* slab = list_entry(entry, slab_t, list);
+                slab_destroy(cachep, slab);
                 list_del_el(entry);
         }
         return ret;
@@ -448,17 +453,57 @@ int kmem_cache_shrink(kmem_cache_t *cachep){ //Deallocate slabs_free under the c
  */
 void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
         if(cachep == nullptr) return;
+        /*unlink this caches management from cache chain*/
         chain_mtx.lock();
         list_del_el(&cachep->next);
         chain_mtx.unlock();
+        /*destroy any slabs left in the slabs_free*/
         cachep->growing = 0;
+        cachep->mutex.lock();
         shrink_cache(cachep);
+        cachep->mutex.unlock();
         //ERROR: user hasn't freed all objects
-        if(!list_empty(&cachep->slabs_full) || !list_empty(&cachep->slabs_partial))
+        if(!list_empty(&cachep->slabs_full) || !list_empty(&cachep->slabs_partial)){
               cachep->failures = 5;
+              printf("slabs_full and slabs_partial not empty\n");
+        }
         kmem_mutex_dtor((void*)cachep);
         kmem_cache_t* cache_kmem = (kmem_cache_t*)base_address;
         kmem_cache_free(cache_kmem, cachep);
+        cache_kmem->ref_count--;
+        /*shrink any size-N caches*/
+        sizes_cs_t *sizes_cp = (sizes_cs_t*)((kmem_cache_t*)base_address + 1);
+        chain_mtx.lock();
+        for (; sizes_cp->obj_size; sizes_cp++) { 
+                if (sizes_cp->cachep){
+                        bool del = false;
+                        sizes_cp->cachep->mutex.lock();
+                        shrink_cache(sizes_cp->cachep);
+                        if(sizes_cp->cachep->ref_count == 0) del = true;
+                        sizes_cp->cachep->mutex.unlock();
+                        if(del == true){
+                                kmem_cache_free(cache_kmem, sizes_cp->cachep);
+                                cache_kmem->ref_count--;
+                                list_del_el(&sizes_cp->cachep->next);
+                                sizes_cp->cachep = nullptr;
+                        }
+                        
+                }
+        }      
+        list_ctl_t *head = &cache_kmem->next;
+        list_ctl_t *pos;
+        list_for_each(pos, head){
+                 kmem_cache_t* entry = list_entry(pos, kmem_cache_t,next);
+                 printf("cache_name: %s\n", entry->name);      
+                        
+        }
+        chain_mtx.unlock();
+        if(cache_kmem->ref_count == 0) {
+                kmem_cache_shrink(cache_kmem);
+        }
+        
+        kmem_cache_info((kmem_cache_t*)base_address);
+        buddy_allocator_log(buddy_allocator);
 }
 
 /*function to allocate one object from size-N caches
@@ -478,6 +523,9 @@ void *kmalloc(size_t size){
                         snprintf(name, sizeof(name), "size-%Zd", sizes_cp->obj_size);
                         sizes_cp->cachep = kmem_cache_create(name, sizes_cp->obj_size, nullptr, nullptr);
                 }
+                sizes_cp->cachep->mutex.lock();
+                sizes_cp->cachep->ref_count++;
+                sizes_cp->cachep->mutex.unlock();
                 return kmem_cache_alloc_helper(sizes_cp->cachep);
          } 
      }
@@ -494,6 +542,9 @@ void kfree(const void *objp){
      if (!objp)
         return;
      cache = GET_GROUP_CACHE(ADDR_TO_BLOCK(objp));
+     cache->mutex.lock();
+     cache->ref_count--;
+     cache->mutex.unlock();
      kmem_cache_free_helper(cache, objp);
 }
 

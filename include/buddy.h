@@ -16,12 +16,15 @@
 typedef struct buddy_s{
   unsigned long base_addr;    /** base address of the memory pool */
 	unsigned int    max_order;   /** 2^maxorder blocks in total */
+  std::mutex* mutexp;
+  std::mutex mutex;
 	unsigned long    *tag_bits; /** one bit for each block
 	                                *   0 = block is allocated
 	                                *   1 = block is available
 	                                */
   unsigned int num_blocks;
   list_ctl_t *available; //list of available groups
+
 } buddy_t;
 
 typedef struct free_group{

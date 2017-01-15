@@ -29,16 +29,13 @@ typedef struct kmem_cache_s{
                                 --when the cache is grown
                                 it is saved in the created slab (slab->color)
                                 and after is set to the next offset*/
-    
-    
-    /*struct kmem_cache_s *slabp_cache; //pointer to the kernel cache that is used for 
-                            //the slab_t, if the slab_t is maintained off-slab.*/
     void (*ctor)(void *);
     void (*dtor)(void *);
     list_ctl_t next;
     unsigned long failures; /*current failure code*/
     unsigned int growing;
     unsigned int shrinked;
+    unsigned int ref_count;
     std::mutex* mutexp; /*a cache can be accessed by one thread at a time*/
     std::mutex mutex;
 } kmem_cache_t;
