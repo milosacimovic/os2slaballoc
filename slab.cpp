@@ -490,20 +490,10 @@ void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
                         
                 }
         }      
-        list_ctl_t *head = &cache_kmem->next;
-        list_ctl_t *pos;
-        list_for_each(pos, head){
-                 kmem_cache_t* entry = list_entry(pos, kmem_cache_t,next);
-                 printf("cache_name: %s\n", entry->name);      
-                        
-        }
         chain_mtx.unlock();
         if(cache_kmem->ref_count == 0) {
                 kmem_cache_shrink(cache_kmem);
         }
-        
-        kmem_cache_info((kmem_cache_t*)base_address);
-        buddy_allocator_log(buddy_allocator);
 }
 
 /*function to allocate one object from size-N caches

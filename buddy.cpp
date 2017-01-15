@@ -119,7 +119,6 @@ block_t* buddy_alloc(buddy_t *buddy, unsigned int order){
 		list = &buddy->available[j];
 		if (list_empty(list)) continue;
 		block = list_entry(list->next, block_t, link);
-		block->order = j;
 		list_del_el(&block->link);
 		mark_allocated(buddy, block);
 
@@ -132,6 +131,7 @@ block_t* buddy_alloc(buddy_t *buddy, unsigned int order){
 			mark_available(buddy, buddy_group_start_blk);
 			list_add(&buddy->available[j], &buddy_group_start_blk->link);
 		}
+		block->order = j;
 		buddy->mutex.unlock();
 		return block;
 	}
@@ -151,7 +151,6 @@ void buddy_free(buddy_t *buddy, void *addr, unsigned int order){
 	/* Put block structure on the group being freed */
 	block = (block_t*) addr;
 	assert(!is_available(buddy, block));
-	printf("freeing order %u\n", order);
 	/* Coalesce as much as possible with adjacent free buddy blocks */
 	while (order < buddy->max_order) {
 		/* Determine our buddy block's address */
