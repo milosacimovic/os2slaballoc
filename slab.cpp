@@ -35,12 +35,12 @@ typedef struct sizes_cs{
 
 /*slab control structure*/
 typedef struct slab_s {
-        list_ctl_t list;
         unsigned long color; /*offset in this particular slab*/
         void *start_mem;  /* start_mem is the address of the first 
                           object(coloring included)*/
         unsigned int obj_inuse;  /* num of objs active in slab */
         buf_t free;
+        list_ctl_t list;
 } slab_t;
 
 void kmem_mutex_ctor(void* addr){
@@ -157,15 +157,28 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
         /*check for bad usage*/
         assert(name != nullptr);
         assert(strlen(name) < CACHE_NAME);
-        //assert(size > BYTES_PER_WORD);
-        if(dtor)
-          assert(ctor);
+        
         kmem_cache_t* cache_kmem = (kmem_cache_t*)base_address;
         kmem_cache_t* cache = (kmem_cache_t*)kmem_cache_alloc(cache_kmem);
         //ERROR: cache couldn't be allocated from cache_kmem
         if(!cache){
                 return cache;
         }
+        
+        cache_kmem->ref_count++;
+        strcpy(cache->name, name);
+        cache->obj_size = size;
+        list_init(&cache->slabs_full);
+        list_init(&cache->slabs_partial);
+        list_init(&cache->slabs_free);
+        calculate_cache_params(cache);
+        /*rest of kmem_cache_t initialization*/
+        kmem_mutex_ctor(cache);
+        cache->ctor = ctor;
+        cache->dtor = dtor;
+        cache->failures = 0;
+        cache->growing = 0;
+        cache->shrinked = 0;
         chain_mtx.lock();
                 list_ctl_t *head = &cache_kmem->next;
                 list_ctl_t *pos;
@@ -182,20 +195,8 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, void (*ctor)(void
 
                 list_add(&cache_kmem->next, &cache->next);
         chain_mtx.unlock();
-        cache_kmem->ref_count++;
-        strcpy(cache->name, name);
-        cache->obj_size = size;
-        list_init(&cache->slabs_full);
-        list_init(&cache->slabs_partial);
-        list_init(&cache->slabs_free);
-        calculate_cache_params(cache);
-        /*rest of kmem_cache_t initialization*/
-        kmem_mutex_ctor(cache);
-        cache->ctor = ctor;
-        cache->dtor = dtor;
-        cache->failures = 0;
-        cache->growing = 0;
-        cache->shrinked = 0;
+        if(dtor && !ctor)
+          cache->failures = 6;
         return cache;
         
 }
@@ -228,6 +229,7 @@ slab_t* add_slab(kmem_cache_t* cachep){
         group = buddy_alloc(buddy_allocator, cachep->blocks_order_per_slab);
          //ERROR: buddy couldn't allocate anymore
          if(!group){
+                cachep->failures = 1;
               return (slab_t*)group;
          }
         /*set up the color in this slab
@@ -455,22 +457,22 @@ int kmem_cache_shrink(kmem_cache_t *cachep){ //Deallocate slabs_free under the c
  */
 void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
         if(cachep == nullptr) return;
-             
-        /*destroy any slabs left in the slabs_free*/
-        
-        cachep->mutex.lock();
-        cachep->growing = 0;
-        /*unlink this caches management from cache chain*/ 
+        /*unlink this caches management from cache chain*/
         chain_mtx.lock();
         list_del_el(&cachep->next);
         chain_mtx.unlock();
+
+        /*destroy any slabs left in the slabs_free*/
+        cachep->mutex.lock();
+        cachep->growing = 0;
         shrink_cache(cachep);
         cachep->mutex.unlock();
         //ERROR: user hasn't freed all objects
         if(!list_empty(&cachep->slabs_full) || !list_empty(&cachep->slabs_partial)){
               cachep->failures = 5;
-              printf("slabs_full and slabs_partial not empty\n");
+              return;
         }
+        //call destructor for mutex
         kmem_mutex_dtor((void*)cachep);
         kmem_cache_t* cache_kmem = (kmem_cache_t*)base_address;
         kmem_cache_free(cache_kmem, cachep);
@@ -498,6 +500,7 @@ void kmem_cache_destroy(kmem_cache_t *cachep){ // Deallocate cache
         }      
         if(cache_kmem->ref_count == 0) {
                 kmem_cache_shrink(cache_kmem);
+                kmem_mutex_dtor(cache_kmem);
         }
 }
 
@@ -585,7 +588,7 @@ void kmem_cache_info(kmem_cache_t *cachep){ // Print cache info
  * array that representes an error_msg
  */
 void print_slab_error(){
-        std::cout << "SLAB ALLOCATOR ERROR: ";
+        std::cout << "SLAB ALLOCATOR ERROR:\n";
 }
 /* function to print an error message concerning
  * previous call of a function from the slab interface
@@ -609,11 +612,16 @@ int kmem_cache_error(kmem_cache_t *cachep){ // Print error message
                         break;
                 case 4:
                         print_slab_error();
-                        std::cout <<" kmalloc: user requested memory greater\n than any of size-N caches can handle.\n" << std::endl;
+                        std::cout <<" kmalloc: user requested memory greater\n than any of size-N caches could handle.\n" << std::endl;
                         break;
                 case 5:
                         print_slab_error();
                         std::cout << "Can't destroy cache.\nUser hasn't freed all objects.\n" << std::endl;
+                        break;
+                case 6:
+                        print_slab_error();
+                        std::cout << "User wanted to provide a destructor without a constructor.\n" << std::endl;
+                        break;
                 default :
                         break;
         }

@@ -78,7 +78,6 @@ int main() {
 	data.shared = shared;
 	data.iterations = ITERATIONS;
 	run_threads(work, &data, THREAD_NUM);
-
 	kmem_cache_destroy(shared);
 	free(space);
 	return 0;

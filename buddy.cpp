@@ -110,7 +110,10 @@ block_t* buddy_alloc(buddy_t *buddy, unsigned int order){
 	block_t *buddy_group_start_blk;
 	buddy->mutex.lock();
 	assert(buddy != nullptr);
-	assert(order <= buddy->max_order);
+	if(order > buddy->max_order){
+		buddy->mutex.unlock();
+		return nullptr;
+	}
 	if(order < 0) order = 0;
 
 	for (j = order; j <= buddy->max_order; j++) {
