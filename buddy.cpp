@@ -1,8 +1,22 @@
 //File: buddy.cpp
 #include <buddy.h>
-#include <init.h>
 #include <math.h>
 #include <assert.h>
+
+bool is_power_of_two(unsigned long x){
+  return ((x != 0) && !(x & (x - 1)));
+}
+
+unsigned long next_power_of_two(unsigned long n){
+    unsigned long p = 1;
+    if (is_power_of_two(n))
+        return n;
+ 
+    while (p < n) {
+        p <<= 1;
+    }
+    return p;
+}
 
 void set_bit(unsigned long bit, unsigned long* addr){
 	unsigned long mask = BIT_MASK(bit);

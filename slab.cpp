@@ -422,7 +422,6 @@ int shrink_cache(kmem_cache_t* cachep){
                 if(list_empty(&cachep->slabs_free)) break;
                 ret++;
                 list_ctl_t* entry = cachep->slabs_free.next;
-                slab_t* slab = list_entry(entry, slab_t, list);
                 list_del_el(entry);
         }
         return ret;
@@ -503,7 +502,6 @@ void kfree(const void *objp){
  */
 void kmem_cache_info(kmem_cache_t *cachep){ // Print cache info
         if(cachep == nullptr) return;
-        std::cout << "cache_name         object_size(bytes) cache_size(blk_no) slab_cnt           obj_cnt_per_slab   percentage(%)"<< std::endl;
         size_t slab_cnt = 0;
         size_t num_active_obj = 0;
         list_ctl_t *pos;
@@ -529,11 +527,12 @@ void kmem_cache_info(kmem_cache_t *cachep){ // Print cache info
                 }
         }
         cachep->mutex.unlock();
+        printf("cache_name         object_size(bytes) cache_size(blk_no) slab_cnt           obj_cnt_per_slab   percentage(%)\n");
         printf("%-19s%-19Zd%-19Zd%-19Zd%-19u%-19.2f\n",cachep->name,cachep->obj_size, 
                 (size_t)(pow(2, cachep->blocks_order_per_slab)*slab_cnt),
                 slab_cnt, cachep->num_obj_per_slab, 
                 num_active_obj ? (float)num_active_obj/total_num*100 : 0);
-        
+       
 
 }
 /* function to print an error message

@@ -29,8 +29,6 @@ typedef struct free_group{
   unsigned int order;
 } block_t;
 
-
-buddy_t* buddy_init(void *space, unsigned int block_num);
 /**
 * This function initializes the beginning of the memory
 * with a structure that controles the buddy block allocation
@@ -38,22 +36,34 @@ buddy_t* buddy_init(void *space, unsigned int block_num);
 * @space: pointer to first memory location
 * @block_num: number of blocks that need to be managed
 */
-block_t* buddy_alloc(buddy_t *buddy, unsigned int order);
+buddy_t* buddy_init(void *space, unsigned int block_num);
+
 /**
 * This function allocates 2^order blocks and
 * returns the address if the allocation was successful
 * @order: 2^order(blocks) sized group is allocated
 */
-void buddy_free(buddy_t *buddy, void *addr, unsigned int order);
+block_t* buddy_alloc(buddy_t *buddy, unsigned int order);
+
 /**
 * This function frees the group of blocks
 * @addr: address of the first block in the group
 * @order: 2^order(blocks) sized group
 */
-void buddy_allocator_log(buddy_t *buddy);
+void buddy_free(buddy_t *buddy, void *addr, unsigned int order);
+
 /**
 * This function initializes logs the current
 * state of the buddy allocator
 */
+void buddy_allocator_log(buddy_t *buddy);
 
+/* function to test if number is power of two
+ * @number: number to test
+ */
+bool is_power_of_two(unsigned long number);
+/* function to round the number to the next power of two
+ * @number: number to be rounded
+ */
+unsigned long next_power_of_two(unsigned long number);
 #endif
